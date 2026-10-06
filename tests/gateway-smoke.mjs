@@ -11,8 +11,8 @@ async function post(path, body) {
   assert.equal(res.status,200,JSON.stringify(data.error)); return data;
 }
 if (process.argv.includes('--plan-only')) {
-  const days=Number(process.env.TEST_PLAN_DAYS || 15);
-  const plan=await post('/api/meal-plan',{profile:{...profile,sports:['Chạy bộ','Bơi lội'],goal:'custom',customGoal:'Duy trì sức bền, ăn đa dạng hơn'},preferences:'Món Việt và món Âu dễ nấu, thích đồ nước, rau và trái cây.',days});
+  const days=Number(process.env.TEST_PLAN_DAYS || 3);
+  const plan=await post('/api/meal-plan',{profile:{...profile,sports:['Chạy bộ','Bơi lội'],goal:'custom',customGoal:'Duy trì sức bền, ăn đa dạng hơn'},preferences:'Món Việt và món Âu dễ nấu, thích đồ nước, rau và trái cây.',allergies:'tôm',avoidIngredients:'rau mùi',days});
   assert.equal(plan.days.length,days); assert.deepEqual(plan.days.map(d=>d.day),Array.from({length:days},(_,i)=>i+1));
   assert.ok(plan.days.every(d=>d.meals.length>=3 && d.meals.every(m=>m.foods.length && m.foods.every(f=>f.portion.includes('ước lượng')))));
   console.log(`Thực đơn ${days} ngày: đủ ngày, bữa, định lượng; nhiều môn tập và mục tiêu riêng.`);
@@ -27,7 +27,7 @@ assert.equal(vague.needsClarification,true); assert.equal(vague.totals.calories,
 const clarified=await post('/api/analyze',{profile,meal:'1 suất phở',clarifications:[{question:vague.questions[0],answer:'Bát to: khoảng 200 g bánh phở chín, 100 g thịt bò chín, 400 ml nước dùng và 50 g rau.'}]});
 assert.equal(typeof clarified.needsClarification,'boolean'); assert.ok(clarified.assumptions.length>0);
 if(clarified.needsClarification) { assert.equal(clarified.totals.calories,null); assert.ok(clarified.questions.length>0); } else { assert.ok(clarified.totals.calories>0); }
-const plan=await post('/api/meal-plan',{profile,preferences:'Món Việt dễ nấu, thích cơm và phở, có rau mỗi bữa.',days:3});
+const plan=await post('/api/meal-plan',{profile,preferences:'Món Việt dễ nấu, thích cơm và phở, có rau mỗi bữa.',allergies:'',avoidIngredients:'',days:3});
 assert.equal(plan.estimated,true); assert.deepEqual(plan.days.map(day=>day.day),[1,2,3]); assert.ok(plan.days.every(day=>day.meals.length>=3&&day.meals.every(m=>m.foods.length>=1&&m.foods.every(f=>/ước lượng/.test(f.portion))))); console.log('Thực đơn 3 ngày: đủ bữa, món, định lượng và nhãn ước lượng.');
 const chat=await post('/api/chat',{profile,question:'Làm sao bổ sung đạm vào bữa cơm Việt sau tập? Không cần thực đơn điều trị.',mealContext:result.summary});
 assert.ok(chat.answer.length>30); console.log('Trò chuyện: nhận câu trả lời tiếng Việt.');

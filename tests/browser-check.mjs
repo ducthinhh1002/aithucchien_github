@@ -12,7 +12,8 @@ async function fillProfile({age='25',weight='65',height='170',sex='male',sports=
   await page.getByRole('spinbutton',{name:/^Tuổi/}).fill(age);
   await page.getByRole('spinbutton',{name:/Cân nặng/}).fill(weight);
   await page.getByRole('spinbutton',{name:/Chiều cao/}).fill(height);
-  await page.getByRole('combobox',{name:/Giới tính sinh học/}).selectOption(sex);
+  await page.getByRole('combobox',{name:/^Giới tính/}).selectOption(sex);
+  await page.locator('input[name="bodyCondition"]:visible').fill('Khỏe mạnh');
   for(const sport of sports) await page.getByRole('checkbox',{name:sport,exact:true}).check();
   await page.getByRole('spinbutton',{name:/Thời gian tập mỗi buổi/}).fill('60');
   await page.getByRole('combobox',{name:/Mức vận động/}).selectOption('high');
@@ -38,8 +39,9 @@ try {
   await page.getByRole('spinbutton',{name:/Chiều cao/}).fill('170');
   await page.getByRole('tab',{name:/Thêm ảnh món ăn/}).click();
   const png=await page.locator('.hero-art').screenshot(); await fs.writeFile('screenshots/meal-test.png',png);
-  await page.locator('input[type=file]').setInputFiles({name:'bua-an.png',mimeType:'image/png',buffer:png});
-  await page.locator('.upload-preview').waitFor();
+  await page.locator('input[type=file]').setInputFiles([{name:'pho.png',mimeType:'image/png',buffer:png},{name:'rau.png',mimeType:'image/png',buffer:png}]);
+  await page.locator('.meal-image-tile').first().waitFor();
+  assert.equal(await page.locator('.meal-image-tile').count(),2);
   await page.screenshot({path:'screenshots/desktop.png',fullPage:true});
   await page.getByRole('button',{name:'Phân tích bữa ăn',exact:true}).last().click();
   await page.getByRole('heading',{name:'Cho Nếp biết thêm nhé'}).waitFor();
@@ -49,7 +51,9 @@ try {
   await page.getByRole('textbox',{name:/Câu trả lời bổ sung/}).fill('Tô vừa, khoảng 150 g bánh phở chín và 80 g thịt bò.');
   await page.getByRole('button',{name:'Gửi bổ sung & phân tích tiếp'}).click();
   await page.getByRole('heading',{name:'Bữa cơm sau tập'}).waitFor();
-  const followup=requests.at(-1); assert.equal(followup.meal,'1 suất phở'); assert.deepEqual(followup.profile.sports,['Tập thể hình','Chạy bộ']); assert.equal(followup.profile.goal,'custom'); assert.equal(followup.profile.sessionMinutes,60); assert.equal(followup.image,requests[0].image); assert.match(followup.clarifications[0].answer,/150 g/);
+  const followup=requests.at(-1); assert.equal(followup.meal,'1 suất phở'); assert.deepEqual(followup.profile.sports,['Tập thể hình','Chạy bộ']); assert.equal(followup.profile.goal,'custom'); assert.equal(followup.profile.sessionMinutes,60); assert.equal(followup.images.length,2); assert.deepEqual(followup.images,requests[0].images); assert.equal(followup.profile.bodyCondition,'Khỏe mạnh'); assert.match(followup.clarifications[0].answer,/150 g/);
+  await page.locator('.meal-assessment').waitFor();
+  assert.match(await page.locator('.meal-assessment').innerText(),/Một điều bạn có thể chỉnh/);
   await page.screenshot({path:'screenshots/result.png',fullPage:true});
   await page.getByRole('button',{name:'Bữa ăn cho bạn',exact:true}).click();
   assert.equal(await page.getByRole('spinbutton',{name:/^Tuổi/}).inputValue(),'','Plan inputs must be independent');
@@ -60,13 +64,15 @@ try {
   await page.getByRole('textbox',{name:/Sở thích ăn uống/}).fill('Món Việt, thích đồ nước và món dễ nấu.');
   await page.locator('.consent-line input:visible').check();
   let planInput; await page.route('**/api/meal-plan',async route=>{planInput=route.request().postDataJSON();await route.fulfill({json:mockPlan});});
-  await page.getByRole('spinbutton',{name:/Phạm vi thực đơn/}).fill('16');
+  await page.getByRole('textbox',{name:/Dị ứng thực phẩm/}).fill('tôm, đậu phộng');
+  await page.getByRole('textbox',{name:/Thành phần không muốn ăn/}).fill('rau mùi');
+  await page.getByRole('spinbutton',{name:/Phạm vi thực đơn/}).fill('8');
   await page.getByRole('button',{name:'Tạo thực đơn cho bạn'}).click();
-  assert.match(await page.getByRole('alert').innerText(),/1 đến 15/); assert.equal(planInput,undefined);
+  assert.match(await page.getByRole('alert').innerText(),/1 đến 7/); assert.equal(planInput,undefined);
   await page.getByRole('button',{name:'3 ngày',exact:true}).click();
   await page.getByRole('button',{name:'Tạo thực đơn cho bạn'}).click();
   await page.getByRole('heading',{name:'Thực đơn hợp lịch tập'}).waitFor();
-  assert.equal(planInput.profile.age,31); assert.deepEqual(planInput.profile.sports,['Bơi lội']); assert.equal(planInput.days,3); assert.match(planInput.preferences,/Món Việt/);
+  assert.equal(planInput.profile.age,31); assert.deepEqual(planInput.profile.sports,['Bơi lội']); assert.equal(planInput.days,3); assert.match(planInput.preferences,/Món Việt/); assert.equal(planInput.allergies,'tôm, đậu phộng'); assert.equal(planInput.avoidIngredients,'rau mùi');
   await page.getByRole('button',{name:'Ngày 3',exact:true}).click();
   await page.getByRole('heading',{name:'Ngày 3',exact:true}).waitFor();
   assert.equal(await page.locator('.plan-meal-card:visible').count(),3);
@@ -90,5 +96,5 @@ try {
   await page.screenshot({path:'screenshots/mobile.png',fullPage:true}); assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.reload(); await page.getByRole('button',{name:'Bữa ăn cho bạn',exact:true}).click(); assert.equal(await page.getByRole('spinbutton',{name:/^Tuổi/}).inputValue(),''); assert.equal(await page.locator('.plan-result:visible').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS: required profiles, multiple sports, duration/custom goal, image retained across clarification, independent plan inputs and consent, 1–15 day validation, day selection, state/navigation/privacy, desktop/mobile, chat/history/sources/errors.');
+  console.log('PASS: required profiles, multiple sports, duration/custom goal, image retained across clarification, independent plan inputs and consent, 1–7 day validation and allergy/excluded ingredient transmission, day selection, state/navigation/privacy, desktop/mobile, chat/history/sources/errors.');
 } finally { await browser.close(); }

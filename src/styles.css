@@ -632,6 +632,17 @@ label.goal-option { cursor: pointer; flex-direction: row; justify-content: flex-
   .clarification-actions > button { flex: 1 1 140px; }
   .plan-day-header { flex-direction: column; }
 }
+.meal-image-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0 16px; }
+.meal-image-tile { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px; background: #f5f8ef; border: 1px solid #e2e9d8; border-radius: 9px; }
+.meal-image-tile img { width: 52px; height: 52px; object-fit: cover; flex: 0 0 auto; border-radius: 6px; }
+.meal-image-tile span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #536b45; }
+.meal-image-tile .upload-remove { flex: 0 0 auto; }
+.meal-assessment { margin: 17px 0; padding: 18px; border-radius: 12px; background: #f0f5e9; border: 1px solid #dce8d2; }
+.meal-assessment h3 { margin: 0 0 8px; font-size: 16px; color: #345b3d; }
+.meal-assessment p { margin: 7px 0; line-height: 1.7; font-size: 12px; color: #53644e; }
+.meal-assessment .assessment-metric { font-weight: 600; color: #28593d; }
+.meal-assessment .assessment-action { background: #fff; border-radius: 8px; padding: 11px; border: 1px solid #d8e8d2; }
+@media (max-width: 480px) { .meal-image-list { grid-template-columns: 1fr; } }
 @media print {
   .plan-day-tabs, .clarification-actions { display: none !important; }
   .plan-day-card, .plan-meal-card { box-shadow: none; break-inside: avoid; }

@@ -36,13 +36,13 @@ Máy chủ phục vụ bản build tại **http://localhost:3001**. `PORT` do n�
 
 ## Những gì sản phẩm có
 
-- Hồ sơ bắt buộc: tuổi, cân nặng, chiều cao, giới tính sinh học, ít nhất một môn tập (chọn nhiều môn), thời gian tập mỗi buổi, mức vận động và mục tiêu. Ngoài các mục tiêu mặc định có **Mục tiêu riêng** với ô nhập mô tả bắt buộc khi chọn.
+- Hồ sơ bắt buộc ở cả hai màn: tuổi, cân nặng, chiều cao, giới tính, thể trạng cơ thể (khỏe mạnh/đang chấn thương/đang hồi phục...), ít nhất một môn tập (chọn nhiều môn), thời gian tập mỗi buổi, mức vận động và mục tiêu. Ngoài các mục tiêu mặc định có **Mục tiêu riêng** với ô nhập mô tả bắt buộc khi chọn.
 - Màn **Phân tích bữa ăn** (tên mới của Khám phá bữa ăn): nếu mô tả chung chung hoặc AI thiếu tự tin, hiện ô hỏi thêm thay vì đưa số liệu. Trả lời bổ sung rồi phân tích tiếp với cùng ảnh và mô tả gốc, tối đa 5 lượt.
-- Màn **Bữa ăn cho bạn**: có hồ sơ, mục tiêu và đồng ý xử lý AI **hoàn toàn độc lập** với màn phân tích. Nhập sở thích ăn uống và phạm vi 1–15 ngày để AI tạo từng bữa cùng định lượng dự kiến; chuyển ngày để xem thực đơn. Không cần vào màn phân tích trước.
+- Màn **Bữa ăn cho bạn**: có hồ sơ, mục tiêu và đồng ý xử lý AI **hoàn toàn độc lập** với màn phân tích. Nhập sở thích, dị ứng và thành phần không muốn ăn (nếu có), chọn phạm vi 1–7 ngày để AI tạo từng bữa cùng định lượng dự kiến; chuyển ngày để xem thực đơn. Không cần vào màn phân tích trước.
 - Hồ sơ ban đầu để trống, không lấy số liệu mẫu làm thể trạng của người dùng. Dữ liệu của từng màn được giữ riêng khi chuyển màn và xóa khi tải lại trang.
 - Nhập khẩu phần bằng **văn bản bắt buộc**, có mẫu phở bò, cơm nhà và bánh mì để thử nhanh.
-- Thêm ảnh JPG/PNG/WebP tùy chọn; thu nhỏ trên trình duyệt trước khi gửi. Ảnh không thay thế mô tả khối lượng hoặc thông tin dầu/sốt.
-- AI đa phương thức ước lượng kcal, đạm, tinh bột, chất béo theo món và tổng bữa; nêu giả định, câu hỏi cần bổ sung và gợi ý điều chỉnh theo hồ sơ.
+- Thêm tối đa **4 ảnh JPG/PNG/WebP** cho các món trong cùng bữa; nén trên trình duyệt, tổng payload được giới hạn để dùng Vercel. Ảnh không thay mô tả bắt buộc về món/khối lượng/dầu/sốt; cùng bộ ảnh được gửi lại nếu Nếp cần hỏi bổ sung.
+- AI đa phương thức ước lượng kcal, đạm, bột đường và chất béo theo món; backend đối soát tổng với từng món (thiếu dữ liệu thành phần sẽ báo chưa rõ, không coi là 0). Kết quả so sánh tỷ trọng bữa này với **mốc duy trì ước lượng của cả ngày** và mốc đạm ngày, rồi làm nổi bật **một điều chỉnh sơ bộ**. Không gán mốc cố định cho mọi bữa hoặc nhầm mức duy trì với mục tiêu giảm/tăng cân.
 - Hỏi Nếp về dinh dưỡng và tập luyện qua AI, có ngữ cảnh bữa vừa xem. Mỗi câu hỏi độc lập, không gửi toàn bộ lịch sử trò chuyện.
 - Bữa đã xem chỉ nằm trong bộ nhớ phiên, tối đa 10 bữa. Có nút xóa từng bữa / tất cả; tải lại trang là mất. Không lưu ảnh trong lịch sử.
 - Góc kiến thức với liên kết nguồn công khai và giải thích giới hạn dữ liệu.
@@ -64,8 +64,8 @@ API ứng dụng:
 | Endpoint | Mục đích |
 | --- | --- |
 | `GET /api/health` | Chỉ trả `configured`, không trả khóa |
-| `POST /api/analyze` | Nhận `{profile, meal, image?, clarifications?}`; có thể trả `needsClarification: true` để hỏi thêm |
-| `POST /api/meal-plan` | Nhận `{profile, preferences, days}`; trả đúng số ngày với món và khẩu phần mỗi bữa |
+| `POST /api/analyze` | Nhận `{profile, meal, images? (tối đa 4), image? (cũ), clarifications?}`; có thể trả `needsClarification: true` để hỏi thêm |
+| `POST /api/meal-plan` | Nhận `{profile, preferences, allergies, avoidIngredients, days}` (1–7 ngày); trả món và khẩu phần khi hợp lệ; không bảo đảm tránh nhiễm chéo dị ứng |
 | `POST /api/chat` | Nhận `{profile, question, mealContext?}` và trả `{answer, safetyFlags}` |
 
 Giới hạn body, ảnh, thời gian gọi và tần suất yêu cầu được áp dụng. Lỗi nhà cung cấp không được chuyển nguyên văn ra trình duyệt.
@@ -80,8 +80,8 @@ Giới hạn body, ảnh, thời gian gọi và tần suất yêu cầu được
 - Nếp hỏi thêm hoặc trả `null` (“Chưa rõ”) khi thiếu căn cứ; độ tin cậy không nâng lên thành số liệu đã kiểm chứng.
 - Mốc năng lượng tham khảo được máy chủ tính theo Mifflin–St Jeor, với hệ số hoạt động **giả định** 1,55 / 1,725 / 1,9. Chỉ là năng lượng duy trì, không tự áp thâm hụt hay thặng dư giảm/tăng cân.
 - Khoảng đạm tham khảo 1,4–2,0 g/kg/ngày theo ISSN 2017 cho người trưởng thành khỏe mạnh tập luyện.
-- Không tính mốc cá nhân cho dưới 18 tuổi, thai kỳ / cho con bú, bệnh lý / đang điều trị khi được mô tả. Màn thực đơn không đưa định lượng cá nhân cho các trường hợp này, mà hướng dẫn trao đổi với chuyên gia. Hồ sơ mới bắt buộc chiều cao và giới tính sinh học.
-- Thực đơn dài được chia thành nhóm tối đa 3 ngày, gọi tối đa 3 nhóm song song và có thời hạn chung 55 giây. Chỉ hiển thị khi nhận đủ ngày/bữa/khẩu phần hợp lệ; lỗi AI không được lấp bằng thực đơn mẫu.
+- Không tính mốc cá nhân cho dưới 18 tuổi, thai kỳ / cho con bú, bệnh lý / đang điều trị hoặc chấn thương / đang hồi phục khi được mô tả trong thể trạng. Màn thực đơn không đưa định lượng cá nhân cho các trường hợp này, mà hướng dẫn trao đổi với chuyên gia. Hồ sơ mới bắt buộc chiều cao và giới tính.
+- Thực đơn tối đa 7 ngày được chia thành từng ngày, tối đa 3 yêu cầu AI đồng thời, để tránh phản hồi quá dài; có thời hạn chung 55 giây. Danh sách dị ứng/thành phần tránh ăn được gửi tới AI và kiểm tra tên món/nguyên liệu trả về, nhưng không thể bảo đảm không có dị nguyên ẩn hoặc nhiễm chéo; hãy kiểm tra với người chế biến. Chỉ hiển thị khi nhận đủ ngày/bữa/khẩu phần hợp lệ; lỗi AI không được lấp bằng thực đơn mẫu.
 - Không có cơ sở dữ liệu, localStorage, tài khoản hay nhật ký request chứa thông tin sức khỏe. Thông tin nhập vẫn được gửi cho dịch vụ AI bên ngoài để xử lý sau khi người dùng đồng ý; không hứa rằng nhà cung cấp hoàn toàn không lưu dữ liệu.
 
 Nguồn:
@@ -98,8 +98,10 @@ Nguồn:
 1. Import repo, đặt **Root Directory** là `chung-khao/thinhnd`.
 2. Cấu hình biến môi trường `GATEWAY_KEY` (bắt buộc), `GATEWAY_MODEL` (tùy chọn).
 3. Dự án đã có `vercel.json` và serverless handler `api/index.js`; dùng build `npm run build`, output `dist`.
-4. Sau khi deploy, kiểm tra `/api/health`, phân tích văn bản và ảnh trên URL thật. Cấu hình thời gian thực thi hàm phù hợp gói dịch vụ.
-5. Giữ URL hoạt động ít nhất 4 tuần theo đề bài. Chưa có tài khoản triển khai được kết nối trong phiên làm việc này nên không tự động có URL công khai.
+4. Deploy **Preview** trước: kiểm tra `/api/health` (JSON), POST `{}` vào ba API trả 400 JSON, `/api/khong-co` trả 404 JSON, JS/CSS tải đúng MIME và màn ứng dụng mở được sau refresh. Tiếp theo thử phân tích chữ/ảnh, thực đơn 1–3–7 ngày có/không dị ứng với Gateway thật. Chỉ lên Production khi mọi gate qua.
+5. Ảnh gốc tối đa 8 MB được nén ở trình duyệt; backend giới hạn ảnh giải mã 3 MiB và body 4 MB, chừa chỗ cho JSON dưới giới hạn 4,5 MB của Vercel. Dù vậy cần thử ảnh thật trên Preview. `vercel.json` cấp hàm 60 giây, luồng thực đơn có deadline 55 giây; đo thời gian khi cold start.
+6. Khi mở public, limiter trong RAM không giới hạn tổng số lần gọi AI trên nhiều instance; thiết lập quota/giám sát chi phí và rate-limit phân tán hoặc WAF, kiểm tra chính sách IP proxy. Dị ứng phải xác minh trực tiếp với người chế biến.
+7. Giữ URL hoạt động ít nhất 4 tuần theo đề bài. Chưa có tài khoản triển khai được kết nối trong phiên làm việc này nên không tự động có URL công khai.
 
 ### Render / Railway
 
@@ -119,12 +121,14 @@ npm.cmd run build
 
 Kết quả đã xác minh trên máy:
 
-- **26/26 unit/API tests** đạt, gồm hồ sơ bắt buộc, nhiều môn tập, mục tiêu riêng, hỏi rõ khẩu phần, an toàn, thực đơn 1/3/15 ngày và từ chối thực đơn thiếu ngày/bữa.
+- **35/35 unit/API tests** đạt với Gateway giả lập, gồm hồ sơ bắt buộc/thể trạng, nhiều môn tập, mục tiêu riêng, tối đa 4 ảnh và giới hạn dung lượng ảnh, hỏi rõ khẩu phần, đối soát tổng từ từng món, dị ứng/thành phần tránh ăn, thực đơn 1/3/7 ngày, retry có giới hạn khi AI trả sai schema và từ chối thực đơn thiếu ngày/bữa hoặc chứa thành phần bị loại trừ.
 - Bản build production thành công.
-- Kiểm thử Chromium desktop/mobile đạt: bắt buộc hồ sơ, chọn nhiều môn, thời lượng/mục tiêu riêng, hỏi bổ sung và giữ ảnh gốc, hai hồ sơ độc lập, đồng ý xử lý riêng, giới hạn 1–15 ngày, chuyển ngày thực đơn, giữ trạng thái khi chuyển màn, hỏi đáp/lịch sử/nguồn/lỗi API; không có lỗi JavaScript hoặc tràn ngang mobile.
+- Kiểm thử Chromium desktop/mobile đạt: bắt buộc hồ sơ/thể trạng, chọn nhiều môn, thời lượng/mục tiêu riêng, 2 ảnh trong một bữa và giữ bộ ảnh khi hỏi bổ sung, so sánh mốc tham khảo, hai hồ sơ độc lập, đồng ý xử lý riêng, giới hạn 1–7 ngày và gửi thành phần cần tránh, chuyển ngày thực đơn, giữ trạng thái khi chuyển màn, hỏi đáp/lịch sử/nguồn/lỗi API; không có lỗi JavaScript hoặc tràn ngang mobile.
 - Gateway thật trả HTTP **200** cho phân tích văn bản, phân tích ảnh minh họa PNG hợp lệ và hỏi đáp tiếng Việt. Ảnh kiểm thử không phải ảnh thực phẩm cân đo; không dùng nó làm bằng chứng về độ chính xác ước lượng món ăn.
 - Tình huống đau ngực/khó thở trả cảnh báo cơ sở y tế/115, không cần gọi AI.
-- `npm audit --omit=dev`: không phát hiện lỗ hổng tại thời điểm kiểm tra.
+- `npm audit --omit=dev`: không phát hiện lỗ hổng tại thời điểm kiểm tra trước thay đổi này.
+- **Trạng thái Gateway hiện tại:** lần thử thực đơn 3 ngày có dị ứng/né thành phần đã từng thất bại do `ECONNRESET` rồi phản hồi schema không hợp lệ. Sau khi chuyển sang từng ngày + một lượt sửa định dạng có giới hạn, lần thử 3 ngày **không có hạn chế thành phần** trả 200 đủ 3 ngày. Điều này chưa xác nhận thực đơn 7 ngày hoặc thực đơn có dị ứng hoạt động ổn định; dị ứng tuyệt đối không thể được AI bảo đảm.
+- Chưa có Preview/Production Vercel thực tế trong phiên. Cần deploy Preview và thử qua URL thật trước khi nộp; xem checklist dưới đây.
 
 Unit/API tests dùng gateway mock, không mất quota. Script `tests/browser-check.mjs` kiểm tra giao diện desktop/mobile bằng Playwright với phản hồi phân tích giả lập **chỉ trong kiểm thử**, không phải chế độ demo của sản phẩm. Chạy khi máy chủ ở cổng 3001 đã có bản build:
 

@@ -59,7 +59,7 @@ export function createApp(options = {}) {
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); res.set('X-Content-Type-Options', 'nosniff'); next(); });
   app.get('/api/health', (req, res) => res.json({ configured: Boolean(key.trim()) }));
   app.use('/api', rateLimiter);
-  app.use('/api', express.json({ limit: '6mb', strict: true }));
+  app.use('/api', express.json({ limit: '4mb', strict: true }));
 
   async function gateway(messages, { maxTokens = 3500, controller = new AbortController(), deadline = Date.now() + timeoutMs } = {}) {
     if (!key.trim()) throw new ApiError(503, 'GATEWAY_NOT_CONFIGURED', 'Chưa cấu hình gateway AI.');
@@ -76,9 +76,11 @@ export function createApp(options = {}) {
       let response;
       try {
         response = await fetchImpl(GATEWAY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: maxTokens, stream: false, response_format: { type: 'json_object' } }), signal: controller.signal });
-      } catch {
+      } catch (error) {
         if (controller.signal.aborted) throw new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway AI quá thời gian chờ.');
-        throw new ApiError(502, 'GATEWAY_UNAVAILABLE', 'Không kết nối được gateway AI. Vui lòng thử lại.');
+        const unavailable = new ApiError(502, 'GATEWAY_UNAVAILABLE', 'Không kết nối được gateway AI. Vui lòng thử lại.');
+        unavailable.retryableReset = error?.code === 'ECONNRESET' || error?.cause?.code === 'ECONNRESET';
+        throw unavailable;
       }
       if (!response.ok) {
         // Never relay provider bodies, headers or auth-related details to the browser.
@@ -116,7 +118,8 @@ export function createApp(options = {}) {
       const safety = safetyCheck(input.profile, analyze ? input.meal : input.question, input.mealContext || '', ...(input.clarifications || []).flatMap((entry) => [entry.question, entry.answer]));
       if (safety.emergency) return res.json(analyze ? emergencyAnalysis(input.profile, safety) : { answer: safety.flags.join('\n'), safetyFlags: safety.flags });
       const context = JSON.stringify({ profile: input.profile, ...(analyze ? { meal: input.meal, clarifications: input.clarifications || [], portionProvided: hasPortionIndicator(input.meal, input.clarifications) } : { question: input.question, mealContext: input.mealContext }), dailyTarget: dailyTarget(input.profile, safety), deterministicSafetyFlags: safety.flags });
-      const content = analyze && input.image ? [{ type: 'text', text: context }, { type: 'image_url', image_url: { url: input.image } }] : context;
+      const images = analyze ? [...(input.images || []), ...(input.image ? [input.image] : [])] : [];
+      const content = images.length ? [{ type: 'text', text: context }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] : context;
       const raw = await gateway([{ role: 'system', content: `${SYSTEM_PROMPT}\n${analyze ? ANALYZE_PROMPT : CHAT_PROMPT}` }, { role: 'user', content }]);
       try {
         if (analyze) return res.json(normalizeAnalysis(raw, input.profile, safety, !hasPortionIndicator(input.meal, input.clarifications)));
@@ -134,20 +137,42 @@ export function createApp(options = {}) {
       const result = mealPlanSchema.safeParse(req.body);
       if (!result.success) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Dữ liệu yêu cầu không hợp lệ.', fields: result.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })) } });
       const input = result.data;
-      const safety = safetyCheck(input.profile, input.preferences);
-      if (safety.emergency || safety.medical || input.profile.age < 18) return res.json(safetyMealPlan(input.profile, safety));
+      const safety = safetyCheck(input.profile, input.preferences, input.allergies, input.avoidIngredients);
+      if (safety.emergency || safety.medical || input.profile.age < 18) return res.json(safetyMealPlan(input.profile, safety, input.allergies));
       const dayNumbers = Array.from({ length: input.days }, (_, index) => index + 1);
       const chunks = [];
-      for (let index = 0; index < dayNumbers.length; index += 3) chunks.push(dayNumbers.slice(index, index + 3));
+      for (const day of dayNumbers) chunks.push([day]);
       const plans = new Array(chunks.length);
       let cursor = 0;
       const worker = async () => {
         while (cursor < chunks.length && !controller.signal.aborted) {
           const index = cursor++;
-          const context = JSON.stringify({ profile: input.profile, preferences: input.preferences, requestedDays: input.days, dayNumbers: chunks[index], dailyTarget: dailyTarget(input.profile, safety), deterministicSafetyFlags: safety.flags });
-          const raw = await gateway([{ role: 'system', content: `${SYSTEM_PROMPT}\n${MEAL_PLAN_PROMPT}` }, { role: 'user', content: context }], { maxTokens: 8000, controller, deadline });
-          try { plans[index] = normalizeMealPlan(raw, input.profile, safety, chunks[index]); }
-          catch { throw new ApiError(502, 'GATEWAY_RESPONSE_INVALID', 'Thực đơn AI không đầy đủ hoặc không hợp lệ. Vui lòng thử lại.'); }
+          const context = JSON.stringify({ profile: input.profile, preferences: input.preferences, allergies: input.allergies, avoidIngredients: input.avoidIngredients, requestedDays: input.days, dayNumbers: chunks[index], dailyTarget: dailyTarget(input.profile, safety), deterministicSafetyFlags: safety.flags });
+          const messages = [{ role: 'system', content: `${SYSTEM_PROMPT}\n${MEAL_PLAN_PROMPT}` }, { role: 'user', content: context }];
+          // At most one repair request per day, within the SAME route deadline. The
+          // correction contains only schema field paths, never health data or a log.
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const raw = await gateway(messages, { maxTokens: 3500, controller, deadline });
+              plans[index] = normalizeMealPlan(raw, input.profile, safety, chunks[index], input);
+              break;
+            } catch (error) {
+              const invalid = !(error instanceof ApiError) || error.code === 'GATEWAY_RESPONSE_INVALID';
+              const canRetry = invalid || error.retryableReset;
+              const paths = Array.isArray(error?.issues) ? error.issues.slice(0, 8).map((issue) => issue.path.map(String).join('.')).filter((value) => /^[a-zA-Z0-9.]+$/.test(value)).map((value) => value.slice(0, 80)) : [];
+              // Optional diagnostic hook sees only fixed codes/field paths; never
+              // provider content, ingredient names, profile, key or exception text.
+              if (typeof options.onPlanValidationFailure === 'function' && canRetry) {
+                try { options.onPlanValidationFailure({ day: chunks[index][0], attempt: attempt + 1, code: invalid ? 'SCHEMA_INVALID' : 'ECONNRESET', fieldPaths: [...new Set(paths)] }); } catch { /* diagnostics cannot break request */ }
+              }
+              if (!canRetry || attempt || controller.signal.aborted || Date.now() >= deadline) {
+                if (invalid) throw new ApiError(502, 'GATEWAY_RESPONSE_INVALID', 'AI chưa tạo đủ bữa/định lượng phù hợp. Hãy thử lại với ít ngày hơn.');
+                throw error;
+              }
+              const fields = paths.length ? [...new Set(paths)].join(', ') : 'days, days.meals, days.meals.foods.portion';
+              messages.push({ role: 'user', content: `Sửa phản hồi trước: schema không hợp lệ tại FIELD PATHS: ${fields}. Trả JSON NGẮN, đúng duy nhất ngày yêu cầu, đủ 3 bữa, mỗi món có định lượng số + đơn vị rõ ràng. Giữ mọi hạn chế dị ứng/nguyên liệu tránh; không tạo món hay định lượng giả để che thiếu dữ liệu. Không thêm trường ngoài schema.` });
+            }
+          }
         }
       };
       await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, () => worker()));
@@ -166,7 +191,7 @@ export function createApp(options = {}) {
   }
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
-    if (error.type === 'entity.too.large') return res.status(413).json({ error: { code: 'BODY_TOO_LARGE', message: 'Yêu cầu quá lớn; ảnh tối đa 4 MiB.' } });
+    if (error.type === 'entity.too.large') return res.status(413).json({ error: { code: 'BODY_TOO_LARGE', message: 'Yêu cầu quá lớn; ảnh tối đa 3 MiB.' } });
     if (error.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'INVALID_JSON', message: 'JSON không hợp lệ.' } });
     const status = error instanceof ApiError ? error.status : error.status === 404 ? 404 : 500;
     res.status(status).json({ error: { code: error instanceof ApiError ? error.code : status === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR', message: error instanceof ApiError ? error.message : status === 404 ? 'Không tìm thấy nội dung.' : 'Lỗi máy chủ.' } });
